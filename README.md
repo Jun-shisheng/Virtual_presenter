@@ -80,15 +80,20 @@ ai_digital_human_project/
 ### 1. 下载模型
 
 ```bash
-# 下载 LLM 模型 (Qwen3-8B)
-huggingface-cli download Qwen/Qwen3-8B --local-dir models/llm/Qwen3-8B
+# 一键下载所有模型
+python download_models.py
 
-# 下载 Embedding 模型 (BGE-small-zh-v1.5)
-huggingface-cli download BAAI/bge-small-zh-v1.5 --local-dir models/embedding/bge-small-zh-v1.5
-
-# 下载 TTS 模型 (CosyVoice-300M)
-huggingface-cli download FunAudioLLM/CosyVoice-300M --local-dir models/tts/CosyVoice-300M
+# 或分阶段下载
+python download_models.py --llm       # Qwen3-8B (~16GB)
+python download_models.py --embed     # BGE-small-zh-v1.5 (~184MB)
+python download_models.py --tts       # CosyVoice-300M (~2.5GB)
 ```
+
+| 模型 | 大小 | 路径 | 用途 |
+|------|------|------|------|
+| Qwen3-8B | 16GB | `models/llm/Qwen3-8B/` | 中英双语对话生成 |
+| BGE-small-zh-v1.5 | 184MB | `models/embedding/bge-small-zh-v1.5/` | 中文文本向量化 (RAG) |
+| CosyVoice-300M | 2.5GB | `models/tts/CosyVoice-300M/` | 中文语音合成 + 声音克隆 |
 
 ### 2. 启动后端
 

@@ -3,14 +3,24 @@
 ## 2026-05-17 — 项目初始化 & 模型下载
 
 ### 已完成
-- [x] 初始化 Git 仓库，连接 GitHub 远程仓库
-- [x] 创建项目 README.md 和开发文档
+- [x] 初始化 Git 仓库，连接 GitHub 远程仓库 (`git@github.com:Jun-shisheng/AI_anchor.git`)
+- [x] 首次代码推送（30 个文件，main 分支）
+- [x] 创建项目 README.md（含技术栈、API 文档、硬件适配方案）
 - [x] 创建 `.gitignore`，排除 venv/node_modules/models
+- [x] 创建 `download_models.py` 统一模型下载脚本
+- [x] 下载 BGE-small-zh-v1.5 Embedding 模型 (~184MB) → `models/embedding/`
+- [x] 下载 CosyVoice-300M TTS 模型 → `models/tts/`
 
-### 进行中
-- [ ] 下载 Qwen3-8B 模型到 `models/llm/`
-- [ ] 新建 `backend/llm_engine.py`，LangChain 封装模型调用
+### 已完成（续）
+- [x] 下载 Qwen3-8B 模型 (~16GB, 5 safetensors) → `models/llm/Qwen3-8B/`
+- [x] 下载 BGE-small-zh-v1.5 Embedding (~184MB) → `models/embedding/bge-small-zh-v1.5/`
+- [x] 下载 CosyVoice-300M TTS (~2.5GB) → `models/tts/CosyVoice-300M/`
+- [x] 模型总大小: ~18GB，全部存放在项目 `models/` 目录
+
+### 下一步
+- [ ] 新建 `backend/llm_engine.py`，用 transformers 加载 Qwen3-8B
 - [ ] 改造 `/chat` 接口，替换固定回复为真实 AI 生成
+- [ ] 实现 SSE 流式响应（打字机效果）
 
 ---
 
