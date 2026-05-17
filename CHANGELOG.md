@@ -18,9 +18,30 @@
 - [x] 模型总大小: ~18GB，全部存放在项目 `models/` 目录
 
 ### 下一步
-- [ ] 新建 `backend/llm_engine.py`，用 transformers 加载 Qwen3-8B
-- [ ] 改造 `/chat` 接口，替换固定回复为真实 AI 生成
-- [ ] 实现 SSE 流式响应（打字机效果）
+- [ ] 前端接入 SSE 流式聊天（EventSource 打字机效果）
+- [ ] 聊天历史接口改为返回分页数据
+- [ ] 第二阶段：RAG 知识库检索（ChromaDB + BGE Embedding）
+
+---
+
+## 2026-05-17 下午 — Phase 1: LLM 接入完成
+
+### 已完成
+- [x] 安装 bitsandbytes 4-bit 量化库 (v0.49.2, Windows 兼容)
+- [x] 新建 `backend/llm_engine.py`，封装 Qwen3-8B 模型加载/生成
+  - 4-bit NF4 量化加载（~6GB VRAM），适配 RTX 4060 8GB
+  - `generate()` 同步生成 + `generate_stream()` 流式 token 输出
+  - 虚拟主播人设 System Prompt（"小安"）
+  - 关闭 Qwen3 思考模式（enable_thinking=False），加快响应
+  - 首次调用自动加载，后续命中内存缓存
+- [x] 改造 `POST /chat` 接口，替换固定回复为 `llm_engine.generate()` 真实 AI 生成
+- [x] 新增 `GET /chat/stream` SSE 流式接口（token 级打字机效果）
+- [x] 启动时预加载模型（`@app.on_event("startup")`），避免首次请求等待
+
+### 技术决策
+- **纯 HuggingFace transformers 方案**：不使用 Ollama，方便后续 QLoRA 微调
+- **4-bit 量化**：NF4 量化 + float16 计算，VRAM 从 16GB 降至 ~6GB
+- **双接口设计**：`POST /chat` 同步返回完整回复，`GET /chat/stream` SSE 流式推送（前端后续接入 EventSource 实现打字机效果）
 
 ---
 

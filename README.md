@@ -17,7 +17,7 @@
 |------|:----:|------|
 | 用户注册/登录 | ✅ 已完成 | FastAPI + MySQL，8位UID标识 |
 | 聊天消息收发 | ✅ 已完成 | 前端 Vue3 聊天界面 + 后端入库 |
-| LLM 大模型接入 | 🔄 进行中 | 接入 Qwen3-8B，替换固定模板回复 |
+| LLM 大模型接入 | ✅ 已完成 | Qwen3-8B 4-bit量化 + SSE流式响应 |
 | RAG 知识库检索 | 🔜 待开发 | ChromaDB + BGE Embedding |
 | Live2D 数字人 | 🔜 待开发 | pixi-live2d-display 渲染 |
 | TTS 语音合成 | 🔜 待开发 | CosyVoice-300M 语音合成 + 口型同步 |
@@ -132,6 +132,7 @@ CREATE DATABASE IF NOT EXISTS ai_digital_db CHARACTER SET utf8mb4 COLLATE utf8mb
 | POST | `/register` | 用户注册 `{username, password}` |
 | POST | `/login` | 用户登录 `{username, password}` |
 | POST | `/chat` | 聊天 `{user_uid, message}` |
+| GET | `/chat/stream` | SSE流式聊天 `?user_uid=xxx&message=xxx` |
 | GET | `/my_chat_history` | 聊天记录 `?user_uid=xxx` |
 
 完整 API 文档: http://127.0.0.1:8000/docs (Swagger UI)
@@ -141,7 +142,7 @@ CREATE DATABASE IF NOT EXISTS ai_digital_db CHARACTER SET utf8mb4 COLLATE utf8mb
 详见 [AI数字人项目-学习开发路线图.md](AI数字人项目-学习开发路线图.md)
 
 - [x] 阶段零：环境摸底与准备
-- [ ] 第一阶段：LLM + LangChain 接入（1-2周）
+- [x] 第一阶段：LLM + LangChain 接入（1-2周）
 - [ ] 第二阶段：RAG 知识库检索（1-2周）
 - [ ] 第三阶段：Live2D 卡通形象（1-2周）
 - [ ] 第四阶段：TTS 语音 + 口型同步（1-2周）

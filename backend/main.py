@@ -1,8 +1,11 @@
-from fastapi import FastAPI, Depends, HTTPException
+import json
+from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from database import engine, Base, get_db
+from fastapi.responses import StreamingResponse
+from database import engine, Base, get_db, SessionLocal
 import models
 import schemas
+import llm_engine
 import random
 
 # 启动时自动创建全新规范数据表
@@ -84,26 +87,28 @@ def login(user: schemas.UserRequest, db=Depends(get_db)):
     }
 
 
-# 私聊聊天接口 + UID绑定入库
+# 启动时预加载 LLM 模型（避免首次请求等待）
+@app.on_event("startup")
+def startup():
+    llm_engine.load_model()
+
+
+# 私聊聊天接口（同步，等待完整回复后返回）
 @app.post("/chat")
 def chat(chat: schemas.ChatRequest, db=Depends(get_db)):
-    # UID校验，防止伪造越权
     current_user = db.query(models.User).filter(models.User.uid == chat.user_uid).first()
     if not current_user:
         raise HTTPException(status_code=400, detail="用户身份无效，请重新登录")
 
-    # AI默认回复，后续可接入大模型
-    ai_reply_text = f"收到你的消息：{chat.message} 😊"
+    ai_reply_text = llm_engine.generate(chat.message)
 
-    # 写入聊天记录，绑定用户唯一UID
     new_record = models.ChatRecord(
-        user_uid = chat.user_uid,
-        user_content = chat.message,
-        ai_reply = ai_reply_text,
-        chat_type = 0, # 标记为私人私聊
-        room_id = 0
+        user_uid=chat.user_uid,
+        user_content=chat.message,
+        ai_reply=ai_reply_text,
+        chat_type=0,
+        room_id=0,
     )
-
     db.add(new_record)
     db.commit()
     db.refresh(new_record)
@@ -112,8 +117,57 @@ def chat(chat: schemas.ChatRequest, db=Depends(get_db)):
         "code": 200,
         "user_content": new_record.user_content,
         "ai_reply": new_record.ai_reply,
-        "create_time": str(new_record.create_time)
+        "create_time": str(new_record.create_time),
     }
+
+
+# SSE 流式聊天接口（打字机效果）
+@app.get("/chat/stream")
+def chat_stream(
+    user_uid: str = Query(...),
+    message: str = Query(...),
+):
+    # 校验用户
+    db = SessionLocal()
+    try:
+        current_user = db.query(models.User).filter(models.User.uid == user_uid).first()
+        if not current_user:
+            raise HTTPException(status_code=400, detail="用户身份无效，请重新登录")
+    finally:
+        db.close()
+
+    def event_stream():
+        full_reply = ""
+        try:
+            for token in llm_engine.generate_stream(message):
+                full_reply += token
+                yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            return
+
+        # 流式结束后写入数据库
+        db_write = SessionLocal()
+        try:
+            record = models.ChatRecord(
+                user_uid=user_uid,
+                user_content=message,
+                ai_reply=full_reply,
+                chat_type=0,
+                room_id=0,
+            )
+            db_write.add(record)
+            db_write.commit()
+            db_write.refresh(record)
+            yield f"data: {json.dumps({'done': True, 'record_id': record.id}, ensure_ascii=False)}\n\n"
+        finally:
+            db_write.close()
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # 获取当前用户专属私聊历史（UID精准隔离，绝对看不到他人数据）
