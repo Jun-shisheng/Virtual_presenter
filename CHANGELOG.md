@@ -24,6 +24,34 @@
 
 ---
 
+## 2026-05-18 — Phase 1 收尾 & Phase 2 RAG 完成
+
+### 已完成
+- [x] 聊天历史接口改为分页返回（page/page_size/total）
+- [x] 前端 SSE 流式聊天 — EventSource 逐 token 打字机效果
+- [x] 前端新增 RAG 开关，一键切换增强模式
+- [x] 新建 `backend/rag_retriever.py` — ChromaDB + BGE-small-zh-v1.5
+- [x] 知识库管理 API: POST /kb/add, GET /kb/list, DELETE /kb/{title}, GET /kb/search
+- [x] RAG 增强聊天: POST /chat/rag + GET /chat/rag/stream (SSE)
+- [x] 安装依赖: chromadb, sentence-transformers
+
+### API 汇总（新增 6 个）
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | /kb/add | 添加知识文档 {title, content, source} |
+| GET | /kb/list | 列出所有知识文档 |
+| DELETE | /kb/{title} | 删除指定知识文档 |
+| GET | /kb/search | 搜索知识库 ?q=xxx&top_k=3 |
+| POST | /chat/rag | RAG 增强同步聊天 |
+| GET | /chat/rag/stream | RAG 增强 SSE 流式聊天 |
+
+### 下一步
+- [ ] 准备知识库内容（虚拟主播人设、直播话术、粉丝问答）
+- [ ] Phase 3: Live2D 数字人（pixi-live2d-display）
+- [ ] Phase 4: TTS 语音合成（CosyVoice-300M）
+
+---
+
 ## 2026-05-17 下午 — Phase 1: LLM 接入完成
 
 ### 已完成

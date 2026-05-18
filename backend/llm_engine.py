@@ -1,6 +1,6 @@
 """Qwen3-8B LLM 引擎 — 4-bit 量化加载 + 同步/流式生成"""
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, TextIteratorStreamer
+from transformers import AutoModelForCausalLM, AutoTokenizer, TextIteratorStreamer, BitsAndBytesConfig
 from pathlib import Path
 from threading import Thread
 from typing import Generator
@@ -28,13 +28,16 @@ def load_model():
 
     _tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
-    _model = AutoModelForCausalLM.from_pretrained(
-        model_path,
-        torch_dtype=torch.float16,
-        device_map="auto",
+    quantization_config = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_compute_dtype=torch.float16,
         bnb_4bit_quant_type="nf4",
+    )
+    _model = AutoModelForCausalLM.from_pretrained(
+        model_path,
+        dtype=torch.float16,
+        device_map="auto",
+        quantization_config=quantization_config,
         trust_remote_code=True,
     )
     _model.eval()
