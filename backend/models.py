@@ -10,7 +10,7 @@ class User(Base):
     # 对外全局唯一8位UID，用户唯一标识
     uid = Column(String(8), unique=True, nullable=False, index=True)
     username = Column(String(20), nullable=False)
-    password = Column(String(20), nullable=False)
+    password = Column(String(128), nullable=False)
     create_time = Column(DateTime, default=datetime.now)
 
 
@@ -28,4 +28,4 @@ class ChatRecord(Base):
     room_id = Column(Integer, default=0, comment="公共房间ID，私聊为0")
     is_allow_train = Column(Integer, default=1, comment="是否允许用于AI训练 0否1是")
 
-    create_time = Column(DateTime, default=datetime.now)
+    create_time = Column(DateTime, default=datetime.now, index=True)
