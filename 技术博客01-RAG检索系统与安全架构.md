@@ -2,7 +2,7 @@
 
 ## 摘要
 
-本文详细介绍 AI 虚拟主播项目「小安」的 RAG 检索增强生成系统与后端安全架构。系统采用 ChromaDB 向量数据库 + BGE 中文 Embedding 模型实现知识库语义检索，通过 Qwen3-8B 4-bit 量化大模型生成对话回复。安全层面实现了 bcrypt 密码哈希、JWT 无状态令牌鉴权、三层安全防线（输入预检 → System Prompt → LLM 兜底）。全文涵盖余弦相似度检索原理、标点语义分块策略、相似度阈值过滤机制、SSE 流式生成与线程管理、FastAPI 工程化实践等核心技术细节，适合对 RAG 架构和后端安全感兴趣的开发者参考。
+本文详细介绍 AI 虚拟主播项目「小安」的 RAG 检索增强生成系统与后端安全架构。系统采用 ChromaDB 向量数据库 + BGE 中文 Embedding 模型实现知识库语义检索，通过 BGE-Reranker CrossEncoder 实现两阶段精排（召回 20 → 重排 → 取 3），Qwen3-8B 4-bit 量化大模型生成对话回复。安全层面实现了 bcrypt 密码哈希、JWT 无状态令牌鉴权、三层安全防线（输入预检 → System Prompt → LLM 兜底）。全文涵盖余弦相似度检索原理、标点语义分块策略、相似度阈值过滤机制、两阶段检索与 rerank 精排、Redis LLM 响应缓存、BackgroundTasks 异步写入、SSE 流式生成与线程管理、FastAPI 工程化实践等核心技术细节，适合对 RAG 架构和后端安全感兴趣的开发者参考。
 
 ---
 
@@ -209,7 +209,83 @@ def search_knowledge(query, top_k=3, score_threshold=0.5):
 - 如果所有结果都被过滤 → 返回空列表 → `build_rag_prompt` 不触发 RAG 增强 → 走普通对话模式
 - 避免"强行匹配"：没有相关知识就诚实地说不知道，防止模型编造
 
-### 2.7 RAG Prompt 构建
+### 2.7 两阶段检索与 Rerank 精排
+
+#### 2.7.1 为什么需要 Rerank？
+
+向量检索（Embedding 召回）速度快但不精确，因为 Embedding 模型将所有语义压缩为一个固定维度向量，天然存在信息损失。Rerank（重排序）使用 CrossEncoder 对查询和文档做全注意力交叉编码，精确度大幅提升。
+
+```
+传统：Embedding 召回 top_k=3 → 直接注入 prompt
+     └─ 问题：第 4~10 名可能有更相关的文档被丢弃
+
+两阶段：Embedding 召回 20 条 → CrossEncoder 逐对打分 → 取 top 3
+        └─ 优势：召回率不降，精确度显著提升
+```
+
+#### 2.7.2 模型选型
+
+| 模型 | 类型 | 大小 | 速度 | 适用 |
+|------|------|------|------|------|
+| BGE-small-zh-v1.5 | Bi-Encoder (Embedding) | 184MB | 快（< 50ms） | 召回阶段 |
+| **bge-reranker-base** | CrossEncoder (Rerank) | 400MB | 较慢（~300ms/20对） | 精排阶段 |
+| bge-reranker-v2-m3 | CrossEncoder (Rerank) | 2.3GB | 慢（~800ms） | 高精度场景 |
+
+选择 bge-reranker-base 的原因：在延迟和精度之间取最佳平衡，400MB 内存占用可控。
+
+#### 2.7.3 实现方式
+
+```python
+_rerank_model = None
+_rerank_lock = threading.Lock()
+
+def _get_rerank_model():
+    global _rerank_model
+    if _rerank_model is not None:
+        return _rerank_model
+    with _rerank_lock:
+        if _rerank_model is not None:
+            return _rerank_model
+        if RERANK_MODEL_PATH.exists():
+            _rerank_model = CrossEncoder(str(RERANK_MODEL_PATH))
+        else:
+            print("[RAG] Reranker model not found, rerank disabled")
+            _rerank_model = False  # sentinel: 模型不可用时优雅降级
+        return _rerank_model
+```
+
+完整的 `search_knowledge` 两阶段流程：
+
+```python
+def search_knowledge(query, top_k=3, score_threshold=0.5, use_rerank=True):
+    # === 第一阶段：向量粗召回 ===
+    recall_k = 20 if use_rerank else max(top_k * 2, 10)
+    results = collection.query(query_embeddings=query_embedding, n_results=recall_k)
+
+    # 阈值预过滤
+    candidates = [c for c in raw_results if (1.0 - c.distance) >= threshold]
+
+    if not candidates:
+        return []
+
+    # === 第二阶段：CrossEncoder 精排 ===
+    if use_rerank and len(candidates) > top_k:
+        reranker = _get_rerank_model()
+        if reranker and reranker is not False:
+            pairs = [[query, c["content"]] for c in candidates]
+            rerank_scores = reranker.predict(pairs, show_progress_bar=False)
+            for i, c in enumerate(candidates):
+                c["score"] = round(float(rerank_scores[i]), 4)
+            candidates.sort(key=lambda x: x["score"], reverse=True)
+
+    return candidates[:top_k]
+```
+
+#### 2.7.4 优雅降级
+
+如果 reranker 模型文件不存在（未下载或路径错误），`_get_rerank_model()` 返回 `False`，系统自动退化为纯 Embedding 模式，不阻断检索流程。这在开发环境（不想下载额外 400MB 模型）或生产环境（GPU 显存不足）时尤为重要。
+
+### 2.8 RAG Prompt 构建
 
 ```python
 def build_rag_prompt(user_message, contexts):
@@ -646,7 +722,82 @@ class ChatRequest(BaseModel):
 - password 6~128：最小安全长度 + 哈希后不超 DB 字段
 - message 1~500：弹幕级聊天长度，防止 LLM 过载
 
-### 6.5 公共函数抽取
+### 6.5 Redis LLM 响应缓存
+
+高频问题（如"你是谁"、"现在几点"、"今天星期几"）会造成完全相同的 LLM 推理反复执行，浪费 GPU 资源。引入 Redis 缓存：
+
+```python
+import hashlib, redis
+from config import REDIS_URL, REDIS_CACHE_TTL
+
+def _get_cache():
+    """获取 Redis 连接，不可用时返回 None 优雅降级"""
+    try:
+        r = redis.Redis.from_url(REDIS_URL, socket_connect_timeout=2, decode_responses=True)
+        r.ping()
+        return r
+    except Exception:
+        return None  # 降级：无缓存，直通 LLM
+
+def _cache_get(prompt: str) -> str | None:
+    r = _get_cache()
+    if r is None:
+        return None
+    key = "llm_cache:" + hashlib.sha256(prompt.encode()).hexdigest()[:16]
+    return r.get(key)
+
+def _cache_set(prompt: str, response: str):
+    r = _get_cache()
+    if r is None:
+        return
+    key = "llm_cache:" + hashlib.sha256(prompt.encode()).hexdigest()[:16]
+    try:
+        r.setex(key, REDIS_CACHE_TTL, response)  # TTL 默认 1 小时
+    except Exception:
+        pass
+```
+
+缓存键设计：
+- 对完整 prompt 取 SHA256 前 16 位作为键
+- 前缀 `llm_cache:` 实现键空间隔离
+- TTL 1 小时，兼顾命中率和时效性
+
+关键设计——**优雅降级**：Redis 不可用时（未安装、服务宕机、网络不通），`_get_cache()` 返回 `None`，缓存逻辑自动短路，系统直通 LLM，不影响核心功能。开发环境不装 Redis 也能正常跑。
+
+### 6.6 BackgroundTasks 异步写入
+
+`/chat` 和 `/chat/rag` 同步接口中，LLM 生成（10~30s）与 DB 写入在同一线程，高并发时 DB 写入会加剧阻塞。改用 FastAPI `BackgroundTasks` 将 DB 操作从请求线程剥离：
+
+```python
+from fastapi import BackgroundTasks
+
+@app.post("/chat")
+def chat(chat_req: schemas.ChatRequest, bg: BackgroundTasks,
+         current_user=Depends(auth.get_current_user)):
+    # 先查缓存（毫秒级）
+    cached = _cache_get(chat_req.message)
+    if cached:
+        bg.add_task(_save_chat_record, current_user.uid, chat_req.message, cached)
+        return {..., "cached": True}
+
+    # 缓存未命中，调 LLM
+    ai_reply_text = llm_engine.generate(chat_req.message)
+
+    # DB 写入抛到后台，请求线程立即返回
+    bg.add_task(_save_chat_record, current_user.uid, chat_req.message, ai_reply_text)
+    _cache_set(chat_req.message, ai_reply_text)  # 异步写入缓存
+    return {...}
+```
+
+流程对比：
+```
+旧：LLM 生成 (15s) → DB 写入 (50ms) → 返回  |  用户等待 15.05s
+新：LLM 生成 (15s) → 返回  |  DB 写入在后台线程完成  |  用户等待 15s
+```
+
+虽然 LLM 生成仍然是瓶颈（本质上是同步的），但 DB 写入不再增加额外延迟。
+
+### 6.7 公共函数抽取
 
 ```python
 def _save_chat_record(user_uid, message, reply):
@@ -712,9 +863,10 @@ def _lookup_user(user_uid):
 
 | 项目 | 状态 | 说明 |
 |------|:---:|------|
-| Rerank 精排 | 🔜 | 召回 20 → reranker → 取 3，提升检索精确度 |
-| Redis 缓存 | 🔜 | 高频问题缓存，减少重复 LLM 调用 |
-| 同步接口阻塞 | 🔜 | `/chat`、`/chat/rag` LLM 生成期间阻塞线程 |
+| Rerank 精排 | ✅ | CrossEncoder 两阶段检索，模型不存在时优雅降级 |
+| Redis 缓存 | ✅ | LLM 响应缓存 TTL 1h，Redis 不可用时自动降级 |
+| 异步 DB 写入 | ✅ | BackgroundTasks 将聊天记录写入剥离请求线程 |
+| 同步接口阻塞 | 🔜 | `/chat`、`/chat/rag` LLM 生成期间仍阻塞线程（LLM 本身同步） |
 | Live2D 渲染 | 🔜 | 前端数字人显示 |
 | TTS 语音 | 🔜 | CosyVoice-300M 文字转语音 |
 | LoRA 微调 | 🔜 | 主播风格定制训练 |
@@ -724,7 +876,8 @@ def _lookup_user(user_uid):
 | 模型 | 路径 | 大小 | 用途 |
 |------|------|------|------|
 | Qwen3-8B (4-bit) | `models/llm/Qwen3-8B/` | ~5GB | 对话生成 |
-| BGE-small-zh-v1.5 | `models/embedding/bge-small-zh-v1.5/` | 184MB | 向量 Embedding |
+| BGE-small-zh-v1.5 | `models/embedding/bge-small-zh-v1.5/` | 184MB | 向量 Embedding（召回阶段） |
+| bge-reranker-base | `models/reranker/bge-reranker-base/` | 400MB | CrossEncoder 精排（可选） |
 | CosyVoice-300M | `models/tts/CosyVoice-300M/` | 2.5GB | TTS（待接入） |
 
 ---
