@@ -16,8 +16,8 @@
 ### 1️⃣ 启动后端（打开 **终端 1**）
 
 ```powershell
-cd G:\ai_digital_human_project\backend
-G:\ai_digital_human_project\venv\python.exe -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+cd G:\Virtual_presenter\backend
+G:\Virtual_presenter\venv\python.exe -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 **验证方式**：
@@ -28,7 +28,7 @@ G:\ai_digital_human_project\venv\python.exe -m uvicorn main:app --reload --host 
 ### 2️⃣ 启动前端（打开 **终端 2**，保持终端 1 不关闭）
 
 ```powershell
-cd G:\ai_digital_human_project\frontend
+cd G:\Virtual_presenter\frontend
 npm run dev
 ```
 
@@ -51,7 +51,7 @@ npm run dev
 ## 项目目录结构（核心代码）
 
 ```
-G:\ai_digital_human_project\
+G:\Virtual_presenter\
 ├── backend/
 │   ├── main.py            # FastAPI 主程序（路由 + 业务逻辑）
 │   ├── database.py        # MySQL 数据库连接配置

@@ -1,4 +1,4 @@
-# AI Anchor — AI 虚拟数字人互动系统
+# Virtual_presenter — AI 虚拟数字人互动系统
 
 > 基于 LLM + RAG + Live2D + TTS 的开源 AI 虚拟主播/数字人项目
 
@@ -41,7 +41,7 @@
 ## 项目结构
 
 ```
-ai_digital_human_project/
+Virtual_presenter/
 ├── backend/                    # FastAPI 后端
 │   ├── main.py                # API 入口（路由 + 业务逻辑）
 │   ├── database.py            # MySQL 连接配置

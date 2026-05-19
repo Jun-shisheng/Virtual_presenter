@@ -3,7 +3,7 @@
 ## 2026-05-17 — 项目初始化 & 模型下载
 
 ### 已完成
-- [x] 初始化 Git 仓库，连接 GitHub 远程仓库 (`git@github.com:Jun-shisheng/AI_anchor.git`)
+- [x] 初始化 Git 仓库，连接 GitHub 远程仓库 (`git@github.com:Jun-shisheng/Virtual_presenter.git`)
 - [x] 首次代码推送（30 个文件，main 分支）
 - [x] 创建项目 README.md（含技术栈、API 文档、硬件适配方案）
 - [x] 创建 `.gitignore`，排除 venv/node_modules/models
