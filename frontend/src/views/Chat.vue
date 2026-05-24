@@ -6,14 +6,23 @@
       <button class="logout-btn" @click="logout">退出登录</button>
     </div>
 
-    <div class="chat-content" ref="scrollBox">
-      <div v-if="loading" class="loading-tip">加载历史记录中...</div>
-      <div class="item" v-for="item in chatList" :key="item.id">
-        <p class="user-msg">👤 你：{{ item.user_content }}</p>
-        <p class="ai-msg">🤖 小安：<span v-html="renderMsg(item)"></span><span v-if="item._streaming" class="cursor-blink">|</span></p>
-      </div>
-      <div v-if="sending" class="item thinking-item">
-        <p class="ai-msg thinking">🤖 小安思考中<span class="dots">{{ dots }}</span></p>
+    <div class="main-area">
+      <Live2DStage
+        ref="live2dRef"
+        class="live2d-panel"
+        :expression="'happy'"
+        :energy="0.8"
+        @ready="onLive2dReady"
+      />
+      <div class="chat-content" ref="scrollBox">
+        <div v-if="loading" class="loading-tip">加载历史记录中...</div>
+        <div class="item" v-for="item in chatList" :key="item.id">
+          <p class="user-msg">👤 你：{{ item.user_content }}</p>
+          <p class="ai-msg">🤖 小安：<span v-html="renderMsg(item)"></span><span v-if="item._streaming" class="cursor-blink">|</span></p>
+        </div>
+        <div v-if="sending" class="item thinking-item">
+          <p class="ai-msg thinking">🤖 小安思考中<span class="dots">{{ dots }}</span></p>
+        </div>
       </div>
     </div>
 
@@ -37,6 +46,7 @@
 import { ref, onMounted, nextTick } from 'vue'
 import request from '../request'
 import { useRouter } from 'vue-router'
+import Live2DStage from '../components/Live2DStage.vue'
 
 const BASE_URL = 'http://127.0.0.1:8000'
 const router = useRouter()
@@ -50,8 +60,33 @@ const userUid = ref(localStorage.getItem('user_uid'))
 const username = ref(localStorage.getItem('username'))
 const useRag = ref(false)
 
+const live2dRef = ref(null)
+let audioQueue = []
+let audioPlaying = false
+
 const dots = ref('')
 let dotsTimer = null
+
+function onLive2dReady() {
+  console.log('Live2D model ready')
+}
+
+async function playAudioQueue() {
+  if (audioPlaying || audioQueue.length === 0) return
+  audioPlaying = true
+  while (audioQueue.length > 0) {
+    const { audioUrl, text } = audioQueue.shift()
+    if (live2dRef.value) {
+      await live2dRef.value.playAudio(BASE_URL + audioUrl)
+    }
+  }
+  audioPlaying = false
+}
+
+function enqueueAudio(audioUrl, text) {
+  audioQueue.push({ audioUrl, text })
+  playAudioQueue()
+}
 
 onMounted(async () => {
   if (!userUid.value) {
@@ -124,6 +159,8 @@ const streamChat = (uid, message, item) => {
         if (data.token) {
           item.ai_reply += data.token
           scrollToBottom()
+        } else if (data.audio) {
+          enqueueAudio(data.audio.wav_url, data.audio.text)
         } else if (data.done) {
           item.id = data.record_id
           item._streaming = false
@@ -165,14 +202,14 @@ const logout = () => {
 
 <style scoped>
 .chat-box {
-  width: 700px;
-  margin: 40px auto;
+  width: 960px;
+  margin: 20px auto;
 }
 .header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 15px;
+  margin-bottom: 12px;
   gap: 10px;
 }
 .user-tag {
@@ -187,8 +224,19 @@ const logout = () => {
   border-radius: 4px;
   cursor: pointer;
 }
+.main-area {
+  display: flex;
+  gap: 16px;
+  height: 520px;
+}
+.live2d-panel {
+  width: 340px;
+  flex-shrink: 0;
+  height: 100%;
+}
 .chat-content {
-  height: 500px;
+  flex: 1;
+  height: 100%;
   border: 1px solid #eee;
   padding: 20px;
   overflow-y: auto;

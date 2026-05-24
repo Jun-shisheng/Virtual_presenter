@@ -22,3 +22,15 @@ REDIS_CACHE_TTL = int(os.getenv("REDIS_CACHE_TTL", "3600"))
 CHUNK_MAX = int(os.getenv("CHUNK_MAX", "512"))
 CHUNK_MIN = int(os.getenv("CHUNK_MIN", "80"))
 RAG_SCORE_THRESHOLD = float(os.getenv("RAG_SCORE_THRESHOLD", "0.5"))
+
+TTS_MODEL_PATH = PROJECT_ROOT / "models" / "tts" / "CosyVoice-300M"
+TTS_PROMPT_WAV = PROJECT_ROOT / "third_party" / "CosyVoice" / "asset" / "zero_shot_prompt.wav"
+TTS_PROMPT_TEXT = "希望你以后能够做的比我还好呦。"
+TTS_AUDIO_DIR = Path(__file__).parent / "audio"
+TTS_ENABLED = os.getenv("TTS_ENABLED", "true").lower() == "true"
+
+AUDIO_CACHE_DIR = Path(__file__).parent / "audio" / "cache"
+AUDIO_CACHE_ENABLED = os.getenv("AUDIO_CACHE_ENABLED", "true").lower() == "true"
+
+import re
+SENTENCE_BOUNDARY = re.compile(r'[。！？~！？…\n]')

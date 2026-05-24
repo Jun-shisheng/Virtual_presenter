@@ -19,6 +19,12 @@ env/
 # Model files (too large for Git; see README.md for download instructions)
 models/
 
+# Third-party cloned repos
+third_party/
+
+# Live2D model files
+frontend/public/live2d/
+
 # Node
 frontend/node_modules/
 frontend/dist/
@@ -31,7 +37,8 @@ Thumbs.db
 .env
 .env.local
 
-# Audio cache
+# Audio
+backend/audio/
 backend/audio_cache/
 
 # Vector store

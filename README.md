@@ -1,69 +1,71 @@
 # Virtual_presenter — AI 虚拟数字人互动系统
 
-> 基于 LLM + RAG + Live2D + TTS 的开源 AI 虚拟主播/数字人项目
+> LLM + RAG + Live2D + TTS 全链路 AI 虚拟主播/数字人项目
 
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10+-green)](https://www.python.org/)
 [![Vue](https://img.shields.io/badge/vue-3.x-brightgreen)](https://vuejs.org/)
 [![FastAPI](https://img.shields.io/badge/fastapi-0.100+-teal)](https://fastapi.tiangolo.com/)
+[![GPU](https://img.shields.io/badge/GPU-RTX_4060-orange)]()
 
 ## 项目愿景
 
-用户打开网页 → 看到 Live2D 数字人形象 → 打字/语音输入 → 本地 LLM + RAG 知识库生成回答 → TTS 语音合成 → 数字人开口说话
+打开网页 → 看到 Live2D 数字人 → 打字聊天 → 本地 LLM + RAG 知识库生成回答 → TTS 语音合成 → 数字人口型同步说话
 
 ## 当前进度
 
-| 模块 | 状态 | 说明 |
+| 模块 | 状态 | 关键技术 |
 |------|:----:|------|
-| 用户注册/登录 | ✅ 已完成 | FastAPI + MySQL，8位UID标识 |
-| 聊天消息收发 | ✅ 已完成 | 前端 Vue3 聊天界面 + 后端入库 |
-| LLM 大模型接入 | ✅ 已完成 | Qwen3-8B 4-bit量化 + SSE流式响应 |
-| RAG 知识库检索 | 🔜 待开发 | ChromaDB + BGE Embedding |
-| Live2D 数字人 | 🔜 待开发 | pixi-live2d-display 渲染 |
-| TTS 语音合成 | 🔜 待开发 | CosyVoice-300M 语音合成 + 口型同步 |
-| LoRA 微调 | 🔜 待开发 | 人设数据集 + QLoRA 微调 |
-| 云部署 | 🔜 待开发 | Nginx + uvicorn + GPU 实例 |
+| 用户注册/登录 | ✅ | bcrypt + JWT |
+| LLM 对话 | ✅ | Qwen3-8B 4-bit + SSE 流式 |
+| RAG 知识库 | ✅ | ChromaDB + BGE + Reranker 精排 |
+| 安全加固 | ✅ | 关键词过滤 + System Prompt + 拒绝模板 |
+| Live2D 数字人 | 🔧 | pixi-live2d-display（代码完成，待下载模型） |
+| TTS 语音合成 | 🔧 | CosyVoice-300M GPU fp16（代码完成，RTF ~2.7x） |
+| 灵魂引擎 | 📋 | 设计已完成，Phase 5 实现（情绪/记忆/节律） |
+| LoRA 微调 | 📋 | PEFT + QLoRA 人设微调 |
 
 ## 技术栈
 
-| 层级 | 技术 | 说明 |
-|------|------|------|
-| **LLM** | Qwen3-8B (HuggingFace) | 中文最强 8B 模型，Apache 2.0 |
-| **后端** | FastAPI + SQLAlchemy + PyMySQL | Python 异步 Web 框架 |
-| **前端** | Vue 3 + Vite + Axios + Vue Router | 现代化前端 |
-| **数据库** | MySQL 8.0 | 用户数据 + 聊天记录 |
-| **向量库** | ChromaDB | RAG 知识检索 |
-| **Embedding** | BGE-small-zh-v1.5 | 中文文本向量化 |
-| **TTS** | CosyVoice-300M | 中文语音合成 |
-| **Live2D** | pixi-live2d-display | 数字人渲染 |
-| **微调** | PEFT + QLoRA | 参数高效微调 |
+| 层级 | 技术 |
+|------|------|
+| LLM | Qwen3-8B (4-bit GPTQ) |
+| 后端 | FastAPI + SQLAlchemy + Redis + PyMySQL |
+| 前端 | Vue 3 + Vite + PIXI.js + pixi-live2d-display |
+| 向量库 | ChromaDB + BGE-small-zh-v1.5 + BGE-Reranker |
+| TTS | CosyVoice-300M (GPU fp16) |
+| 安全 | bcrypt + JWT + 输入校验 + 内容过滤 |
 
 ## 项目结构
 
 ```
 Virtual_presenter/
-├── backend/                    # FastAPI 后端
-│   ├── main.py                # API 入口（路由 + 业务逻辑）
-│   ├── database.py            # MySQL 连接配置
-│   ├── models.py              # 数据表 ORM 模型
-│   ├── schemas.py             # Pydantic 请求/响应体
-│   ├── llm_engine.py          # [新增] LangChain LLM 封装
-│   ├── rag_retriever.py       # [新增] RAG 检索器
-│   └── tts_engine.py          # [新增] TTS 语音合成
-├── frontend/                   # Vue 3 前端
-│   └── src/
-│       ├── components/        # 组件（含 Live2DModel）
-│       ├── views/             # 页面（Login, Register, Chat）
-│       ├── router/            # 路由配置
-│       └── request.js         # Axios 请求封装
-├── models/                     # 模型权重（通过 HuggingFace 下载）
-│   ├── llm/                   # Qwen3-8B (~16GB / ~6GB 4-bit)
-│   ├── embedding/             # BGE-small-zh-v1.5 (~480MB)
-│   └── tts/                   # CosyVoice-300M (~310MB)
-├── database/                   # 数据库脚本
-├── README.md                   # 项目文档
-├── CHANGELOG.md                # 开发日志
-└── .gitignore
+├── backend/
+│   ├── main.py              FastAPI 入口 + 路由
+│   ├── auth.py              JWT 鉴权
+│   ├── config.py            统一配置管理
+│   ├── database.py          MySQL 连接
+│   ├── llm_engine.py        Qwen3-8B 4-bit 推理
+│   ├── rag_retriever.py     ChromaDB + BGE + Reranker
+│   ├── tts_engine.py        CosyVoice-300M 句级流式合成
+│   ├── audio_cache.py       高频短语预生成缓存
+│   ├── soul_engine.py       [stub] Phase 5 灵魂引擎
+│   ├── models.py / schemas.py  ORM + 请求体
+│   └── audio/               生成音频文件 (.gitignore)
+├── frontend/src/
+│   ├── views/Chat.vue       双栏聊天（Live2D + 对话）
+│   ├── components/Live2DStage.vue  PIXI.js Live2D 渲染
+│   ├── utils/lipSync.js     Web Audio 音量→口型
+│   ├── router/ / request.js 路由 + Axios
+│   └── assets/
+├── models/                   模型权重 (.gitignore)
+│   ├── llm/Qwen3-8B/         ~5GB (4-bit)
+│   ├── embedding/bge-small-zh-v1.5/  184MB
+│   ├── reranker/bge-reranker-base/   400MB
+│   └── tts/CosyVoice-300M/  2.1GB
+├── third_party/CosyVoice/    CosyVoice 推理代码
+├── docs/
+│   └── phase3-live2d-tts-design.md
+└── requirements.txt
 ```
 
 ## 快速启动
@@ -77,95 +79,129 @@ Virtual_presenter/
 - **Node.js**: 18+
 - **MySQL**: 8.0
 
-### 1. 下载模型
+### 1. 安装依赖
 
 ```bash
-# 一键下载所有模型
-python download_models.py
+cd Virtual_presenter
+uv venv
+source .venv/Scripts/activate  # Windows
+uv pip install -r requirements.txt
 
-# 或分阶段下载
-python download_models.py --llm       # Qwen3-8B (~16GB)
-python download_models.py --embed     # BGE-small-zh-v1.5 (~184MB)
-python download_models.py --tts       # CosyVoice-300M (~2.5GB)
+# CosyVoice 依赖
+uv pip install hyperpyyaml modelscope onnxruntime onnx diffusers \
+    openai-whisper soundfile librosa pyworld conformer inflect wetext \
+    omegaconf hydra-core lightning networkx torchcodec \
+    --index-url https://download.pytorch.org/whl/cu128
+
+# 初始化 CosyVoice 子模块
+cd third_party/CosyVoice
+git submodule update --init --depth 1 third_party/Matcha-TTS
+cd ../..
+
+cd frontend && npm install && cd ..
+```
+
+### 2. 下载模型
+
+```bash
+python download_models.py
 ```
 
 | 模型 | 大小 | 路径 | 用途 |
 |------|------|------|------|
-| Qwen3-8B | 16GB | `models/llm/Qwen3-8B/` | 中英双语对话生成 |
-| BGE-small-zh-v1.5 | 184MB | `models/embedding/bge-small-zh-v1.5/` | 中文文本向量化 (RAG) |
-| CosyVoice-300M | 2.5GB | `models/tts/CosyVoice-300M/` | 中文语音合成 + 声音克隆 |
+| Qwen3-8B (4-bit) | ~5GB | `models/llm/Qwen3-8B/` | 对话生成 |
+| BGE-small-zh-v1.5 | 184MB | `models/embedding/bge-small-zh-v1.5/` | RAG Embedding |
+| bge-reranker-base | 400MB | `models/reranker/bge-reranker-base/` | RAG 精排 (可选) |
+| CosyVoice-300M | 2.1GB | `models/tts/CosyVoice-300M/` | 语音合成 |
 
-### 2. 启动后端
+### 3. 启动后端
 
-```powershell
+```bash
 cd backend
-..\venv\python.exe -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+source ../.venv/Scripts/activate
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-验证: 浏览器打开 http://127.0.0.1:8000 → 显示 `{"code":200,"msg":"✅ AI数字人后端运行正常"}`
+首次启动时 TTS 模型加载约 60 秒（GPU 编译 CUDA kernel）。之后保持在内存中。
 
-### 3. 启动前端
+### 4. 启动前端
 
-```powershell
+```bash
 cd frontend
-npm install
 npm run dev
 ```
 
-验证: 浏览器打开 http://localhost:5173
+浏览器打开 http://localhost:5173
 
-### 4. 数据库配置
-
-确保 MySQL 8.0 运行中，创建数据库：
+### 5. 数据库
 
 ```sql
-CREATE DATABASE IF NOT EXISTS ai_digital_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE IF NOT EXISTS ai_digital_db
+  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
-默认连接: `root:123456@localhost:3306/ai_digital_db`（可在 `backend/database.py` 修改）
+默认连接 `root:123456@localhost:3306/ai_digital_db`，可通过环境变量 `DATABASE_URL` 覆盖。
 
 ## API 接口
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/` | 健康检查 |
-| POST | `/register` | 用户注册 `{username, password}` |
-| POST | `/login` | 用户登录 `{username, password}` |
-| POST | `/chat` | 聊天 `{user_uid, message}` |
-| GET | `/chat/stream` | SSE流式聊天 `?user_uid=xxx&message=xxx` |
-| GET | `/my_chat_history` | 聊天记录 `?user_uid=xxx` |
+| POST | `/register` | 注册 `{username, password}` |
+| POST | `/login` | 登录 → JWT token |
+| POST | `/chat` | 同步聊天 |
+| GET | `/chat/stream` | SSE 流式聊天 + TTS 音频 |
+| GET | `/chat/rag` | RAG 增强同步聊天 |
+| GET | `/chat/rag/stream` | RAG 增强 SSE 流式 + TTS |
+| GET | `/my_chat_history` | 聊天历史分页 |
+| POST | `/kb/add` | 添加知识文档 |
+| GET | `/kb/search` | 知识库检索 |
+| GET | `/audio/*` | 静态音频文件服务 |
 
-完整 API 文档: http://127.0.0.1:8000/docs (Swagger UI)
+完整 API 文档: http://127.0.0.1:8000/docs
 
-## 路线图
+## SSE 事件流格式
 
-详见 [AI数字人项目-学习开发路线图.md](AI数字人项目-学习开发路线图.md)
-
-- [x] 阶段零：环境摸底与准备
-- [x] 第一阶段：LLM + LangChain 接入（1-2周）
-- [ ] 第二阶段：RAG 知识库检索（1-2周）
-- [ ] 第三阶段：Live2D 卡通形象（1-2周）
-- [ ] 第四阶段：TTS 语音 + 口型同步（1-2周）
-- [ ] 第五阶段：LoRA 微调（2-3周）
-- [ ] 第六阶段：云部署上线（1周）
+```
+data: {"token": "大"}                              ← 逐字显示
+data: {"token": "家"}
+data: {"token": "好"}
+data: {"token": "！"}
+data: {"audio": {"wav_url":"/audio/tts_xxx.wav",
+        "duration":1.5, "text":"大家好！"}}          ← 第一句音频就绪
+data: {"token": "今"}
+...
+data: {"done": true, "record_id": 42}              ← 对话结束
+```
 
 ## 硬件适配
 
-本项目针对 **RTX 4060 (8GB VRAM)** 优化：
+针对 **RTX 4060 (8GB VRAM)** 优化：
 
-- Qwen3-8B 使用 4-bit 量化 (~6GB VRAM)
-- Embedding 模型纯 CPU 运行
-- TTS 模型纯 CPU 运行
-- 剩余 ~2GB VRAM 作为推理缓冲
+| 模型 | 显存占用 | 备注 |
+|------|------|------|
+| Qwen3-8B (4-bit) | ~5GB | 常驻显存 |
+| CosyVoice-300M (fp16) | ~2GB | 推理时加载 |
+| BGE + Reranker | CPU | 不占显存 |
+| **合计** | ~7GB | 4060 刚好够用 |
+
+若显存不足，可设置 `TTS_ENABLED=false` 环境变量仅禁用 TTS。
+
+## 路线图
+
+- [x] Phase 1: LLM 接入 + 基础聊天
+- [x] Phase 2: RAG 知识库 + 安全加固 + SSE 流式
+- [x] Phase 3: Live2D 数字人 + TTS 语音合成（**当前**）
+- [ ] Phase 4: 口型精确同步 (MFA) + 音频推流优化
+- [ ] Phase 5: 灵魂引擎 — 情绪/记忆/生理节律
+- [ ] Phase 6: LoRA 人设微调
+- [ ] Phase 7: 云部署上线
 
 ## 许可证
 
-本项目代码采用 MIT 许可证。使用的开源模型分别遵循其各自的许可证：
+本项目代码采用 MIT 许可证。使用的开源模型各自遵循其许可证：
 
 - Qwen3-8B: Apache 2.0
 - BGE-small-zh-v1.5: MIT
 - CosyVoice-300M: Apache 2.0
-
-## 作者
-
-- GitHub: [@Jun-shisheng](https://github.com/Jun-shisheng)
+- Live2D Cubism SDK: [Live2D 专有许可证](https://www.live2d.com/en/download/cubism-sdk/)

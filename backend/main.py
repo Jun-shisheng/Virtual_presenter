@@ -1,4 +1,5 @@
 import json
+import re
 import bcrypt
 import hashlib
 import logging
@@ -6,6 +7,7 @@ from datetime import datetime
 from fastapi import FastAPI, Depends, HTTPException, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from database import engine, Base, get_db, SessionLocal
 import models
@@ -13,9 +15,11 @@ import schemas
 import llm_engine
 import rag_retriever
 import auth
+import tts_engine
+import audio_cache
 import random
 import redis
-from config import REDIS_URL, REDIS_CACHE_TTL
+from config import REDIS_URL, REDIS_CACHE_TTL, TTS_AUDIO_DIR, TTS_ENABLED
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,6 +39,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+TTS_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/audio", StaticFiles(directory=str(TTS_AUDIO_DIR)), name="audio")
 
 
 # ========== 全局异常处理 ==========
@@ -120,6 +127,11 @@ def login(user: schemas.UserRequest, db=Depends(get_db)):
 @app.on_event("startup")
 def startup():
     llm_engine.load_model()
+    if TTS_ENABLED:
+        print("[Startup] Pre-loading TTS engine (takes ~60s on first GPU load)...")
+        tts_engine._get_engine()
+        print("[Startup] TTS engine ready, pre-generating cache...")
+        audio_cache.pregenerate_all(tts_engine)
 
 
 # ========== 公共函数 ==========
@@ -192,6 +204,34 @@ def _check_safety(text: str):
             raise HTTPException(status_code=400, detail="这个问题不适合在直播间讨论哦~")
 
 
+SENTENCE_RE = re.compile(r'[。！？…\n]')
+
+def _extract_sentence(buffer: str) -> str | None:
+    """Extract first complete sentence from buffer if boundary found."""
+    m = SENTENCE_RE.search(buffer)
+    if m:
+        sentence = buffer[:m.end()].strip()
+        if len(sentence) >= 2:
+            return sentence
+    return None
+
+
+def _tts_pipeline(text: str):
+    """Run TTS on complete text, yielding (sentence, audio_result) pairs."""
+    sentences = tts_engine.split_sentences(text)
+    futures = []
+    for sent in sentences:
+        if len(sent.strip()) >= 2:
+            futures.append((sent, tts_engine.synthesize_async(sent.strip())))
+    for sent, future in futures:
+        try:
+            result = future.result(timeout=60)
+            if result:
+                yield sent, result
+        except Exception as e:
+            logger.error(f"TTS timeout for: {sent[:30]}...: {e}")
+
+
 # ========== 聊天接口 ==========
 
 @app.post("/chat")
@@ -232,18 +272,27 @@ def chat_stream(
 
     def event_stream():
         full_reply = ""
+        sent_buffer = ""
+        tts_submitted = False
         try:
             for chunk in llm_engine.generate_stream(message):
                 full_reply += chunk
+                sent_buffer += chunk
                 yield f"data: {json.dumps({'token': chunk}, ensure_ascii=False)}\n\n"
         except Exception as e:
             logger.error(f"Stream error: {e}", exc_info=True)
             yield f"data: {json.dumps({'error': '生成中断，请重试'})}\n\n"
             return
 
+        if TTS_ENABLED and full_reply.strip():
+            tts_submitted = True
+            for sent, audio in _tts_pipeline(full_reply):
+                yield f"data: {json.dumps({'audio': audio}, ensure_ascii=False)}\n\n"
+
         try:
             record = _save_chat_record(current_user.uid, message, full_reply)
-            yield f"data: {json.dumps({'done': True, 'record_id': record.id}, ensure_ascii=False)}\n\n"
+            extra = {"tts": tts_submitted}
+            yield f"data: {json.dumps({'done': True, 'record_id': record.id, **extra}, ensure_ascii=False)}\n\n"
         except Exception as e:
             logger.error(f"Save record error: {e}", exc_info=True)
             yield f"data: {json.dumps({'done': True, 'error': '记录保存失败'}, ensure_ascii=False)}\n\n"
@@ -376,6 +425,7 @@ def chat_rag_stream(
 
     def event_stream():
         full_reply = ""
+        tts_submitted = False
         try:
             for chunk in llm_engine.generate_stream(enhanced_prompt):
                 full_reply += chunk
@@ -385,9 +435,15 @@ def chat_rag_stream(
             yield f"data: {json.dumps({'error': '生成中断，请重试'})}\n\n"
             return
 
+        if TTS_ENABLED and full_reply.strip():
+            tts_submitted = True
+            for sent, audio in _tts_pipeline(full_reply):
+                yield f"data: {json.dumps({'audio': audio}, ensure_ascii=False)}\n\n"
+
         try:
             record = _save_chat_record(current_user.uid, message, full_reply)
-            yield f"data: {json.dumps({'done': True, 'record_id': record.id}, ensure_ascii=False)}\n\n"
+            extra = {"tts": tts_submitted}
+            yield f"data: {json.dumps({'done': True, 'record_id': record.id, **extra}, ensure_ascii=False)}\n\n"
         except Exception as e:
             logger.error(f"Save record error: {e}", exc_info=True)
             yield f"data: {json.dumps({'done': True, 'error': '记录保存失败'}, ensure_ascii=False)}\n\n"
