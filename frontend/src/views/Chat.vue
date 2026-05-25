@@ -58,6 +58,7 @@ const loading = ref(false)
 
 const userUid = ref(localStorage.getItem('user_uid'))
 const username = ref(localStorage.getItem('username'))
+const accessToken = ref(localStorage.getItem('access_token'))
 const useRag = ref(false)
 
 const live2dRef = ref(null)
@@ -95,7 +96,7 @@ onMounted(async () => {
     return
   }
   loading.value = true
-  const res = await request.get(`/my_chat_history?user_uid=${userUid.value}&page_size=50`)
+  const res = await request.get(`/my_chat_history?token=${accessToken.value}&page_size=50`)
   // 后端返回 DESC，反转为 ASC 展示
   chatList.value = (res.data.data || []).reverse()
   loading.value = false
@@ -135,7 +136,7 @@ const sendMsg = async () => {
   scrollToBottom()
 
   try {
-    await streamChat(userUid.value, userMsg, newItem)
+    await streamChat(userMsg, newItem)
   } catch (e) {
     newItem.ai_reply = '⚠️ 请求失败: ' + e.message
     newItem._streaming = false
@@ -147,10 +148,10 @@ const sendMsg = async () => {
   }
 }
 
-const streamChat = (uid, message, item) => {
+const streamChat = (message, item) => {
   return new Promise((resolve, reject) => {
     const endpoint = useRag.value ? '/chat/rag/stream' : '/chat/stream'
-    const url = `${BASE_URL}${endpoint}?user_uid=${encodeURIComponent(uid)}&message=${encodeURIComponent(message)}`
+    const url = `${BASE_URL}${endpoint}?token=${encodeURIComponent(accessToken.value)}&message=${encodeURIComponent(message)}`
     const es = new EventSource(url)
 
     es.onmessage = (event) => {

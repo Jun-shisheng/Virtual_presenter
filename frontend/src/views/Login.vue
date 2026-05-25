@@ -3,6 +3,7 @@
     <h2>AI数字人聊天系统 - 登录</h2>
     <input v-model="username" placeholder="请输入用户名" />
     <input v-model="password" type="password" placeholder="请输入密码" />
+    <p v-if="errorMsg" class="err">{{ errorMsg }}</p>
     <button @click="handleLogin">立即登录</button>
     <p>没有账号？<span @click="$router.push('/register')">去注册</span></p>
   </div>
@@ -16,20 +17,31 @@ import request from '../request'
 const router = useRouter()
 const username = ref('')
 const password = ref('')
+const errorMsg = ref('')
 
 const handleLogin = async () => {
+  errorMsg.value = ''
+
+  if (!username.value.trim()) {
+    errorMsg.value = '请输入用户名'
+    return
+  }
+  if (!password.value) {
+    errorMsg.value = '请输入密码'
+    return
+  }
+
   try {
     const res = await request.post('/login', {
-      username: username.value,
+      username: username.value.trim(),
       password: password.value
     })
-    // 登录成功回调
     localStorage.setItem('user_uid', res.data.uid)
     localStorage.setItem('username', res.data.username)
-    alert('🎉 登录成功！')
+    localStorage.setItem('access_token', res.data.access_token)
     router.push('/chat')
   } catch (err) {
-    alert(err.response?.data?.detail || '登录失败')
+    errorMsg.value = err._readable || '登录失败'
   }
 }
 </script>
@@ -47,6 +59,7 @@ input {
   padding: 12px;
   border-radius: 6px;
   border: 1px solid #ddd;
+  box-sizing: border-box;
 }
 button {
   width: 100%;
@@ -60,5 +73,10 @@ button {
 span {
   color: #409eff;
   cursor: pointer;
+}
+.err {
+  color: #f56c6c;
+  font-size: 13px;
+  margin: 4px 0;
 }
 </style>
