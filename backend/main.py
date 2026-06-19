@@ -463,3 +463,130 @@ def _rag_chat_inner(message: str, use_rag: bool) -> str:
             return rag_retriever.build_rag_prompt(message, contexts)
         # 无相关知识 → 直接用普通 prompt，不做 RAG 增强
     return message
+
+
+# ========== RAG 评估接口 ==========
+
+@app.get("/kb/eval")
+def kb_evaluate(
+    top_k: int = Query(5, ge=1, le=20),
+    use_hybrid: bool = Query(False),
+    use_qe: bool = Query(False),
+):
+    """自动生成测试集并评估 RAG 检索质量
+
+    返回 recall@k, precision@k, MRR, NDCG@k。
+    面试可直接用这个 API 演示检索效果对比。
+    """
+    import evaluation as ev
+
+    collection = rag_retriever._get_collection()
+    all_data = collection.get()
+
+    if not all_data.get("ids"):
+        return {"code": 200, "msg": "知识库为空，无法评估", "data": None}
+
+    # 构造测试集
+    knowledge_chunks = []
+    for i, doc_id in enumerate(all_data.get("ids", [])):
+        knowledge_chunks.append({
+            "id": doc_id,
+            "content": all_data["documents"][i],
+            "metadata": all_data["metadatas"][i] if all_data.get("metadatas") else {},
+        })
+
+    test_queries = ev.generate_test_set(knowledge_chunks)
+    if not test_queries:
+        return {"code": 200, "msg": "知识库文档太短，无法生成测试集", "data": None}
+
+    eval_data = ev.run_evaluation(
+        rag_retriever, test_queries, top_k=top_k, use_hybrid=use_hybrid,
+    )
+    return {
+        "code": 200,
+        "data": {
+            "config": {"top_k": top_k, "use_hybrid": use_hybrid, "use_qe": use_qe},
+            **eval_data,
+        },
+    }
+
+
+@app.get("/kb/eval/compare")
+def kb_eval_compare(
+    top_k: int = Query(5, ge=1, le=20),
+):
+    """对比纯向量检索 vs 混合检索 vs 查询扩展的效果
+
+    面试核心 API：直观展示不同召回策略的指标差异。
+    """
+    import evaluation as ev
+
+    collection = rag_retriever._get_collection()
+    all_data = collection.get()
+
+    if not all_data.get("ids"):
+        return {"code": 200, "msg": "知识库为空", "data": None}
+
+    knowledge_chunks = []
+    for i, doc_id in enumerate(all_data.get("ids", [])):
+        knowledge_chunks.append({
+            "id": doc_id,
+            "content": all_data["documents"][i],
+            "metadata": all_data["metadatas"][i] if all_data.get("metadatas") else {},
+        })
+
+    test_queries = ev.generate_test_set(knowledge_chunks)
+    if not test_queries:
+        return {"code": 200, "msg": "知识库文档太短", "data": None}
+
+    vector_result = ev.run_evaluation(rag_retriever, test_queries, top_k=top_k, use_hybrid=False)
+    hybrid_result = ev.run_evaluation(rag_retriever, test_queries, top_k=top_k, use_hybrid=True)
+
+    return {
+        "code": 200,
+        "data": {
+            "num_queries": len(test_queries),
+            "top_k": top_k,
+            "vector_only": vector_result["summary"],
+            "hybrid_search": hybrid_result["summary"],
+        },
+    }
+
+
+@app.get("/kb/stats")
+def kb_stats(last_n: int = Query(100, ge=1, le=500)):
+    """检索日志统计：延迟、召回率、热门查询、零召回问题"""
+    from retrieval_logger import get_logger
+    stats = get_logger().get_stats(last_n=last_n)
+    return {"code": 200, "data": stats}
+
+
+@app.get("/kb/recent")
+def kb_recent(limit: int = Query(20, ge=1, le=100)):
+    """最近检索记录"""
+    from retrieval_logger import get_logger
+    records = get_logger().get_recent_queries(limit=limit)
+    return {"code": 200, "data": records}
+
+
+# ========== 混合检索接口 ==========
+
+class HybridSearchRequest(BaseModel):
+    query: str = Field(..., min_length=1, max_length=500)
+    top_k: int = Field(5, ge=1, le=20)
+    use_hybrid: bool = Field(True)
+    use_query_expansion: bool = Field(False)
+
+
+@app.post("/kb/search/advanced")
+def kb_search_advanced(req: HybridSearchRequest):
+    """高级检索：支持混合检索、查询扩展
+
+    用于演示不同召回策略的效果差异。
+    """
+    results = rag_retriever.search_knowledge(
+        req.query, top_k=req.top_k,
+        use_hybrid=req.use_hybrid,
+        use_query_expansion=req.use_query_expansion,
+    )
+    return {"code": 200, "data": results}

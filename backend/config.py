@@ -10,6 +10,7 @@ JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = int(os.getenv("ACCESS_TOKEN_EXPIRE_HOURS", "72"))
 
 MODEL_PATH = PROJECT_ROOT / "models" / "llm" / "Qwen3-8B"
+GGUF_MODEL_PATH = PROJECT_ROOT / "models" / "llm" / "gguf" / "Qwen_Qwen3-8B-Q4_K_M.gguf"
 EMBED_MODEL_PATH = PROJECT_ROOT / "models" / "embedding" / "bge-small-zh-v1.5"
 CHROMA_DB_PATH = PROJECT_ROOT / "database" / "chroma_db"
 

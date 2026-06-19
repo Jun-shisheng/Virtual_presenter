@@ -1,5 +1,14 @@
-"""RAG 知识库检索器 — ChromaDB + BGE Embedding + BGE Reranker"""
+"""RAG 知识库检索器 — ChromaDB + BGE Embedding + BGE Reranker + Hybrid Search
+
+召回率提升策略（面试重点）：
+1. 两阶段检索：粗排（向量召回 20）→ 精排（Reranker 精排取 3）
+2. 混合检索：BM25 关键词 + 向量语义 → RRF 融合
+3. 查询扩展：多轮召回取并集，覆盖不同表述
+4. 阈值过滤：score < 0.5 的直接丢弃，减少噪声
+5. 分块优化：语义边界切分，避免关键信息被截断
+"""
 import re
+import time
 import threading
 from pathlib import Path
 from sentence_transformers import SentenceTransformer, CrossEncoder
@@ -148,19 +157,59 @@ def add_knowledge(title: str, content: str, source: str = "") -> dict:
 
 def search_knowledge(
     query: str, top_k: int = 3, score_threshold: float | None = None, use_rerank: bool = True,
+    use_hybrid: bool = False, use_query_expansion: bool = False,
 ) -> list[dict]:
-    """检索：召回 → 阈值过滤 → rerank 精排 → 返回 top_k"""
-    threshold = score_threshold if score_threshold is not None else RAG_SCORE_THRESHOLD
+    """检索：召回 → 阈值过滤 → rerank 精排 → 返回 top_k
+
+    新增参数（面试可展示）：
+    - use_hybrid: 启用 BM25 + 向量混合检索
+    - use_query_expansion: 启用多轮查询扩展召回
+    """
+    t_start = time.time()
+
+    if use_query_expansion:
+        results = _search_with_qe(query, top_k, score_threshold, use_rerank, use_hybrid)
+    elif use_hybrid:
+        results = _hybrid_search_inner(query, top_k, score_threshold, use_rerank)
+    else:
+        results = _search_vector_only(query, top_k, score_threshold, use_rerank)
+
+    # 记录日志
+    try:
+        from retrieval_logger import get_logger
+        latency = (time.time() - t_start) * 1000
+        get_logger().log(
+            query=query, results=results, latency_ms=latency,
+            top_k=top_k, use_rerank=use_rerank,
+            use_hybrid=use_hybrid, use_qe=use_query_expansion,
+        )
+    except Exception:
+        pass
+
+    return results
+
+
+def _search_vector_only(query: str, top_k: int, threshold: float | None,
+                        use_rerank: bool) -> list[dict]:
+    """纯向量检索（原逻辑）"""
+    threshold = threshold if threshold is not None else RAG_SCORE_THRESHOLD
     collection = _get_collection()
     model = _get_embed_model()
 
-    # 第一阶段：向量召回
     recall_k = max(RERANK_RECALL_K, top_k * 3) if use_rerank else max(top_k * 2, 10)
     query_embedding = model.encode([query], normalize_embeddings=True).tolist()
     results = collection.query(query_embeddings=query_embedding, n_results=recall_k)
 
+    candidates = _parse_vector_results(results, threshold)
+    if not candidates:
+        return []
+    return _apply_rerank(candidates, query, top_k, use_rerank)
+
+
+def _parse_vector_results(results: dict, threshold: float) -> list[dict]:
+    """解析 ChromaDB 向量检索结果为统一格式"""
     candidates = []
-    if results["ids"] and results["ids"][0]:
+    if results.get("ids") and results["ids"][0]:
         for i, doc_id in enumerate(results["ids"][0]):
             distance = results["distances"][0][i] if results.get("distances") else 0
             score = max(0.0, min(1.0, 1.0 - distance))
@@ -169,14 +218,15 @@ def search_knowledge(
             candidates.append({
                 "id": doc_id,
                 "content": results["documents"][0][i],
-                "metadata": results["metadatas"][0][i],
+                "metadata": results["metadatas"][0][i] if results.get("metadatas") else {},
                 "score": round(score, 4),
             })
+    return candidates
 
-    if not candidates:
-        return []
 
-    # 第二阶段：rerank 精排
+def _apply_rerank(candidates: list[dict], query: str, top_k: int,
+                   use_rerank: bool) -> list[dict]:
+    """Reranker 精排"""
     if use_rerank and len(candidates) > top_k:
         reranker = _get_rerank_model()
         if reranker and reranker is not False:
@@ -185,8 +235,60 @@ def search_knowledge(
             for i, c in enumerate(candidates):
                 c["score"] = round(float(rerank_scores[i]), 4)
             candidates.sort(key=lambda x: x["score"], reverse=True)
-
     return candidates[:top_k]
+
+
+def _hybrid_search_inner(query: str, top_k: int, threshold: float | None,
+                         use_rerank: bool) -> list[dict]:
+    """混合检索：向量 + BM25 → RRF 融合"""
+    from hybrid_search import hybrid_search as hs, BM25Retriever
+
+    threshold = threshold if threshold is not None else RAG_SCORE_THRESHOLD
+    collection = _get_collection()
+    model = _get_embed_model()
+
+    # 从 ChromaDB 获取全部文档建 BM25 索引
+    all_docs = collection.get()
+    bm25 = BM25Retriever()
+    if all_docs.get("documents"):
+        docs_for_bm25 = []
+        for i, doc_id in enumerate(all_docs.get("ids", [])):
+            docs_for_bm25.append({
+                "id": doc_id,
+                "content": all_docs["documents"][i],
+                "metadata": all_docs["metadatas"][i] if all_docs.get("metadatas") else {},
+            })
+        bm25.index(docs_for_bm25)
+
+    recall_k = max(RERANK_RECALL_K, top_k * 3)
+    results = hs(query, collection, model, bm25, top_k=recall_k, recall_k=recall_k)
+
+    # 阈值过滤
+    candidates = []
+    for r in results:
+        score = r.get("rrf_score", r.get("score", 0))
+        if score < threshold * 0.1:  # RRF 分数尺度不同，用更宽松的阈值
+            continue
+        r["score"] = score
+        candidates.append(r)
+
+    if not candidates:
+        return []
+
+    return _apply_rerank(candidates, query, top_k, use_rerank)
+
+
+def _search_with_qe(query: str, top_k: int, threshold: float | None,
+                    use_rerank: bool, use_hybrid: bool) -> list[dict]:
+    """查询扩展 → 多轮召回 → 结果融合"""
+    from query_expansion import multi_round_recall
+
+    def search_fn(q: str, k: int) -> list[dict]:
+        if use_hybrid:
+            return _hybrid_search_inner(q, k, threshold, use_rerank)
+        return _search_vector_only(q, k, threshold, use_rerank)
+
+    return multi_round_recall(query, search_fn, top_k=top_k, fusion="union")
 
 
 def delete_knowledge(title: str) -> int:
